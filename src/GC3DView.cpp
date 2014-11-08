@@ -8,7 +8,25 @@
 #include <vector>
 #include <cmath>
 
-static const unsigned halfFacePoints = 5;
+static const GLuint halfFacePoints = 5;
+static const GLuint facePoints = halfFacePoints * 2;
+static double SinTable[facePoints];
+static double CosTable[facePoints];
+
+static void genGoniometricTables()
+{
+	double angle = 0;
+	double angleStep = M_PI / (halfFacePoints - 1);
+
+	for (GLuint i = 0; i < facePoints; i++, angle += angleStep) {
+		if (i == halfFacePoints) {
+			angle -= angleStep;
+		}
+
+		SinTable[i] = sin(angle);
+		CosTable[i] = cos(angle);
+	}
+}
 
 GC3DView::GC3DView(QWidget *parent)
 	: GCAbstractView(parent),
@@ -33,6 +51,8 @@ GC3DView::GC3DView(QWidget *parent)
 	connect(hideLayersChkB, SIGNAL(stateChanged(int)), this, SLOT(hideUpperLayers(int)));
 
 	setViewport(mainWidget);
+
+	genGoniometricTables();
 }
 
 void GC3DView::setGridDimensions(const QRectF &dimensions)
@@ -96,7 +116,7 @@ void GC3DView::addThreadFaceIndices(bool start)
 std::vector<GCGLView::Vertex> GC3DView::getThreadVertices(QLineF thread, double width, double height, double z)
 {
 	std::vector<GCGLView::Vertex> vertices;
-	vertices.reserve(halfFacePoints * 2);
+	vertices.reserve(facePoints);
 
 	if (width < height) {
 		width = height;
@@ -111,42 +131,21 @@ std::vector<GCGLView::Vertex> GC3DView::getThreadVertices(QLineF thread, double 
 
 	GCGLView::Vertex vertex;
 
-	double angleStep = M_PI / (halfFacePoints - 1);
-	double angle = 0;
+	for (GLuint pointNo = 0; pointNo < facePoints; pointNo++) {
 
-	for (unsigned pointNo = 0; pointNo < halfFacePoints; pointNo++) {
-		double sinAngle = sin(angle);
-		double cosAngle = cos(angle);
+		if (pointNo == halfFacePoints) {
+			centerVect *= -1;
+		}
 
-		vertex.position[0] = static_cast<GLfloat>(sinAngle * normal.x() * radius + centerVect.x() + thread.p1().x());
-		vertex.position[1] = static_cast<GLfloat>(sinAngle * normal.y() * radius + centerVect.y() + thread.p1().y());
-		vertex.position[2] = static_cast<GLfloat>(centerZ + cosAngle * radius);
+		vertex.position[0] = static_cast<GLfloat>(SinTable[pointNo] * normal.x() * radius + centerVect.x() + thread.p1().x());
+		vertex.position[1] = static_cast<GLfloat>(SinTable[pointNo] * normal.y() * radius + centerVect.y() + thread.p1().y());
+		vertex.position[2] = static_cast<GLfloat>(centerZ + CosTable[pointNo] * radius);
 
-		vertex.normal[0] = static_cast<GLfloat>(sinAngle * normal.x());
-		vertex.normal[1] = static_cast<GLfloat>(sinAngle * normal.y());
-		vertex.normal[2] = static_cast<GLfloat>(cosAngle);
-
-		vertices.push_back(vertex);
-		angle += angleStep;
-	}
-
-
-	angle = M_PI;
-
-	for (unsigned pointNo = 0; pointNo < halfFacePoints; pointNo++) {
-		double sinAngle = sin(angle);
-		double cosAngle = cos(angle);
-
-		vertex.position[0] = static_cast<GLfloat>(sinAngle * normal.x() * radius - centerVect.x() + thread.p1().x());
-		vertex.position[1] = static_cast<GLfloat>(sinAngle * normal.y() * radius - centerVect.y() + thread.p1().y());
-		vertex.position[2] = static_cast<GLfloat>(centerZ + cosAngle * radius);
-
-		vertex.normal[0] = static_cast<GLfloat>(sinAngle * normal.x());
-		vertex.normal[1] = static_cast<GLfloat>(sinAngle * normal.y());
-		vertex.normal[2] = static_cast<GLfloat>(cosAngle);
+		vertex.normal[0] = static_cast<GLfloat>(SinTable[pointNo] * normal.x());
+		vertex.normal[1] = static_cast<GLfloat>(SinTable[pointNo] * normal.y());
+		vertex.normal[2] = static_cast<GLfloat>(CosTable[pointNo]);
 
 		vertices.push_back(vertex);
-		angle += angleStep;
 	}
 
 	return vertices;
