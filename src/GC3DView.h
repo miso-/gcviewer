@@ -8,6 +8,8 @@
 #include <QPair>
 #include <vector>
 
+class QVariant;
+
 class GC3DView : public GCAbstractView
 {
 	Q_OBJECT
@@ -18,6 +20,8 @@ public:
 
 	virtual void setGridDimensions(const QRectF &dimensions);
 	virtual const QRectF &gridDimensions() const;
+	void setLOD(unsigned char LOD);
+	unsigned char LOD() const;
 
 public slots:
 	void currentChanged(const QModelIndex &current, const QModelIndex &previous);
@@ -29,8 +33,8 @@ private:
 	void addThreadHullIndices();
 	void addThreadFaceIndices(bool start);
 	std::vector<GCGLView::Vertex> getThreadVertices(QLineF thread, double width, double height, double z);
-	void terminatePath();
-	void addThread(QLineF thread, double width, double height, double z, bool connect);
+	void terminatePath(const QVariant &path);
+	void addThread(const QVariant &thread, const QVariant &previous);
 	bool addItem(const QModelIndex &index, QModelIndex &previous);
 	void loadGCData();
 
@@ -40,6 +44,10 @@ private:
 	std::vector<GLuint> m_indices;
 
 	QMap<QModelIndex, QPair<size_t, size_t> > m_itemRanges;
+
+	GLuint m_halfFacePoints;
+	std::vector<double> m_sinTable;
+	std::vector<double> m_cosTable;
 };
 
 #endif // GC3DVIEW_H
