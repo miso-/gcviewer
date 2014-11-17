@@ -26,6 +26,7 @@ private slots:
 	void on_action_FileOpen_triggered();
 	void on_action_FileQuit_triggered();
 	void on_action_SettingsFilament_triggered();
+	void on_action_Settings3DView_triggered();
 	void on_action_HelpAbout_triggered();
 	void on_layerSlider_valueChanged(int);
 	void currentChanged(const QModelIndex &, const QModelIndex &);

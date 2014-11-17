@@ -15,6 +15,7 @@ set (GCVIEWER_SOURCES
   src/GCAbstractView.cpp
   src/GCModel.cpp
   src/FilamentSettingsDia.cpp
+  src/GC3DViewSettingsDia.cpp
   src/main.cpp
   )
 
@@ -25,6 +26,7 @@ set (GCVIEWER_HEADERS
   src/GCAbstractView.h
   src/GCModel.h
   src/FilamentSettingsDia.h
+  src/GC3DViewSettingsDia.h
   )
 
 set (GCVIEWER_FORMS

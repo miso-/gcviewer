@@ -2,6 +2,7 @@
 
 #include "ui_GCViewerMW.h"
 #include "FilamentSettingsDia.h"
+#include "GC3DViewSettingsDia.h"
 #include "GCModel.h"
 #include "GC2DView.h"
 
@@ -42,11 +43,15 @@ GCViewerMW::GCViewerMW(QWidget *parent, Qt::WindowFlags flags)
 
 #ifdef BUILD_3D
 	GC3DView *gc3DView = new GC3DView();
+	GC3DViewSettingsDia gc3DViewSettings;
+	gc3DView->setLOD(gc3DViewSettings.LOD());
 	gc3DView->setGridDimensions(QRectF(0, 0, 200, 200));
 	gc3DView->setModel(m_gcModel);
 	gc3DView->setSelectionModel(m_gcSelectionModel);
 
 	ui->tabWidget->addTab(gc3DView, "3D");
+
+	ui->action_Settings3DView->setEnabled(true);
 #else
 	QLabel *label = new QLabel(tr("GCViewer was built without OpenGL support, 3D view is disabled"));
 	label->setAlignment(Qt::AlignCenter);
@@ -108,6 +113,21 @@ void GCViewerMW::on_action_SettingsFilament_triggered()
 			message.exec();
 		}
 	}
+}
+
+void GCViewerMW::on_action_Settings3DView_triggered()
+{
+#ifdef BUILD_3D
+	GC3DView *gc3DView = qobject_cast<GC3DView *>(ui->tabWidget->widget(1));
+	if (!gc3DView) {
+		return;
+	}
+
+	GC3DViewSettingsDia gc3DViewSettings(gc3DView->LOD());
+	if (gc3DViewSettings.exec()) {
+		gc3DView->setLOD(gc3DViewSettings.LOD());
+	}
+#endif // BUILD_3D
 }
 
 void GCViewerMW::on_action_HelpAbout_triggered()
