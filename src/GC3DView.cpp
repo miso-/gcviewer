@@ -1,5 +1,7 @@
 #include "GC3DView.h"
 #include "GCGLView.h"
+#include "GCTree/GCPath.h"
+#include "GCTree/GCCommand.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -7,6 +9,11 @@
 
 #include <vector>
 #include <cmath>
+
+const QColor objectColor(127, 0, 0);
+const QColor layerColor(0, 127, 0);
+const QColor pathColor(127, 127, 0);
+const QColor commandColor(0, 0, 127);
 
 GC3DView::GC3DView(QWidget *parent)
 	: GCAbstractView(parent),
@@ -177,18 +184,17 @@ std::vector<GCGLView::Vertex> GC3DView::getThreadVertices(QLineF thread, double 
 	return vertices;
 }
 
-void GC3DView::terminatePath(const QVariant &path)
+void GC3DView::terminatePath(const GCCommand *path)
 {
-	if (!path.canConvert<parsedGCData>() || m_vertices.size() < m_halfFacePoints * 2) {
+	if (!path || m_vertices.size() < m_halfFacePoints * 2) {
 		return;
 	}
 
-	parsedGCData pathGCD = path.value<parsedGCData>();
-	QLineF normal = pathGCD.thread.unitVector();
+	QLineF normal = path->thread.unitVector();
 	GLfloat normalX = static_cast<GLfloat>(normal.dx());
 	GLfloat normalY = static_cast<GLfloat>(normal.dy());
 
-	size_t start = m_vertices.size() - m_halfFacePoints * 2 - 1;
+	size_t start = m_vertices.size() - m_halfFacePoints * 2;
 	size_t end = m_vertices.size();
 
 	GCGLView::Vertex vertex;
@@ -202,29 +208,27 @@ void GC3DView::terminatePath(const QVariant &path)
 		m_vertices.push_back(vertex);
 	}
 
-	vertex.position[0] = static_cast<GLfloat>(pathGCD.thread.p2().x());
-	vertex.position[1] = static_cast<GLfloat>(pathGCD.thread.p2().y());
-	vertex.position[2] = static_cast<GLfloat>(pathGCD.z - (pathGCD.threadHeight / 2));
+	vertex.position[0] = static_cast<GLfloat>(path->thread.p2().x());
+	vertex.position[1] = static_cast<GLfloat>(path->thread.p2().y());
+	vertex.position[2] = static_cast<GLfloat>(path->z - (path->threadHeight / 2));
 
 	m_vertices.push_back(vertex);
 
 	addThreadFaceIndices(false);
 }
 
-void GC3DView::addThread(const QVariant &thread, const QVariant &prevThread)
+void GC3DView::addThread(const GCCommand *thread, const GCCommand *prevThread)
 {
-	if (!thread.canConvert<parsedGCData>()) {
+	if (!thread) {
 		return;
 	}
 
-	parsedGCData threadGCD = thread.value<parsedGCData>();
-
-	std::vector<GCGLView::Vertex> vertices = getThreadVertices(threadGCD.thread, threadGCD.threadWidth,
-			threadGCD.threadHeight, threadGCD.z);
+	std::vector<GCGLView::Vertex> vertices = getThreadVertices(thread->thread, thread->threadWidth,
+			thread->threadHeight, thread->z);
 	GCGLView::Vertex vertex;
 
-	if (!prevThread.canConvert<parsedGCData>()) {
-		QLineF normal = threadGCD.thread.unitVector();
+	if (!prevThread) {
+		QLineF normal = thread->thread.unitVector();
 		GLfloat normalX = static_cast<GLfloat>(-normal.dx());
 		GLfloat normalY = static_cast<GLfloat>(-normal.dy());
 
@@ -237,9 +241,9 @@ void GC3DView::addThread(const QVariant &thread, const QVariant &prevThread)
 			m_vertices.push_back(vertex);
 		}
 
-		vertex.position[0] = static_cast<GLfloat>(threadGCD.thread.p1().x());
-		vertex.position[1] = static_cast<GLfloat>(threadGCD.thread.p1().y());
-		vertex.position[2] = static_cast<GLfloat>(threadGCD.z - threadGCD.threadHeight / 2);
+		vertex.position[0] = static_cast<GLfloat>(thread->thread.p1().x());
+		vertex.position[1] = static_cast<GLfloat>(thread->thread.p1().y());
+		vertex.position[2] = static_cast<GLfloat>(thread->z - thread->threadHeight / 2);
 		vertex.normal[0] = normalX;
 		vertex.normal[1] = normalY;
 		vertex.normal[2] = 0;
@@ -250,7 +254,7 @@ void GC3DView::addThread(const QVariant &thread, const QVariant &prevThread)
 	} else if (m_vertices.size() >= m_halfFacePoints * 2) {
 		// Create interconnection segment.
 
-		double  deltaAngle = threadGCD.thread.angleTo(prevThread.value<parsedGCData>().thread) * (M_PI / 180.0) / 2.0;
+		double  deltaAngle = thread->thread.angleTo(prevThread->thread) * (M_PI / 180.0) / 2.0;
 
 		if (deltaAngle > M_PI / 2.0) {
 			deltaAngle -= M_PI;
@@ -295,8 +299,8 @@ void GC3DView::addThread(const QVariant &thread, const QVariant &prevThread)
 	}
 
 	m_vertices.insert(m_vertices.end(), vertices.begin(), vertices.end());
-	GLfloat dX = static_cast<GLfloat>(threadGCD.thread.dx());
-	GLfloat dY = static_cast<GLfloat>(threadGCD.thread.dy());
+	GLfloat dX = static_cast<GLfloat>(thread->thread.dx());
+	GLfloat dY = static_cast<GLfloat>(thread->thread.dy());
 
 	for (std::vector<GCGLView::Vertex>::const_iterator i = vertices.begin(); i != vertices.end(); ++i) {
 		vertex = *i;
@@ -317,34 +321,24 @@ bool GC3DView::addItem(const QModelIndex &index, QModelIndex &previous)
 
 	size_t startIndex = m_indices.size();
 
-	QModelIndex cmdIndex = GCModel::getCommandIndex(index);
+	const GCCommand *gcCommand = dynamic_cast<const GCCommand *>(static_cast<GCTreeItem *>(index.internalPointer()));
+	const GCCommand *prevCommand = dynamic_cast<const GCCommand *>(static_cast<GCTreeItem *>(previous.internalPointer()));
 
-	if (cmdIndex.isValid()) {
-		QVariant data = cmdIndex.data(Qt::UserRole);
+	if (gcCommand) {
+		if (!gcCommand->thread.isNull()) {
 
-		if (!data.isValid()) {
-			terminatePath(previous.data(Qt::UserRole));
-			m_itemRanges[previous].second = m_indices.size();
-			previous = QModelIndex();		// Break path.
-			return false;
-		}
-
-		if (!data.value<parsedGCData>().thread.isNull()) {
-
-			parsedGCData indexData = data.value<parsedGCData>();
-
-			if (indexData.threadWidth != 0.0) {
-				addThread(data, previous.data(Qt::UserRole));
+			if (gcCommand->threadWidth != 0.0) {
+				addThread(gcCommand, prevCommand);
 				previous = index;
 			} else {
 				// Travel move, break path.
-				terminatePath(previous.data(Qt::UserRole));
+				terminatePath(prevCommand);
 				m_itemRanges[previous].second = m_indices.size();
 				previous = QModelIndex();
 				return false;
 			}
 
-			m_itemRanges.insert(cmdIndex, QPair<size_t, size_t>(startIndex, m_indices.size()));
+			m_itemRanges.insert(index, QPair<size_t, size_t>(startIndex, m_indices.size()));
 			return true;
 		}
 	} else {
@@ -355,7 +349,8 @@ bool GC3DView::addItem(const QModelIndex &index, QModelIndex &previous)
 		}
 
 		if (previous != QModelIndex()) {
-			terminatePath(previous.data(Qt::UserRole));
+			const GCCommand *prevCommand = dynamic_cast<const GCCommand *>(static_cast<GCTreeItem *>(previous.internalPointer()));
+			terminatePath(prevCommand);
 			m_itemRanges[previous].second = m_indices.size();
 			previous = QModelIndex();
 		}
@@ -365,6 +360,15 @@ bool GC3DView::addItem(const QModelIndex &index, QModelIndex &previous)
 	}
 
 	return false;
+}
+
+QPair<size_t, size_t> GC3DView::getHgltRange(const QModelIndex &index) const
+{
+	if (index.isValid() && m_itemRanges.contains(index)) {
+		return m_itemRanges[index];
+	} else {
+		return QPair<size_t, size_t>(0, 0);
+	}
 }
 
 void GC3DView::loadGCData()
@@ -390,24 +394,23 @@ void GC3DView::currentChanged(const QModelIndex &current, const QModelIndex &pre
 {
 	Q_UNUSED(previous)
 
-	QModelIndex layerIndex = GCModel::getLayerIndex(current);
-	QModelIndex threadIndex = GCModel::getCommandIndex(current);
+	QModelIndex cmdIndex = GCModel::getCommandIndex(current);
+	QModelIndex pathIndex = GCModel::type(current) == GCTreeItem::GC_PATH ? current : cmdIndex.parent();
 
-	QPair<size_t, size_t> hgltLayerRange;
-	if (layerIndex.isValid() && m_itemRanges.contains(layerIndex)) {
-		hgltLayerRange = m_itemRanges[layerIndex];
-	} else {
-		hgltLayerRange = QPair<size_t, size_t>(0, 0);
-	}
+	QPair<size_t, size_t> hgltLayerRange = getHgltRange(GCModel::getLayerIndex(current));
+	QPair<size_t, size_t> hgltPathRange = getHgltRange(pathIndex);
+	QPair<size_t, size_t> hgltCmdRange = getHgltRange(cmdIndex);
 
-	QPair<size_t, size_t> hgltThreadRange;
-	if (threadIndex.isValid() && m_itemRanges.contains(threadIndex)) {
-		hgltThreadRange = m_itemRanges[threadIndex];
-	} else {
-		hgltThreadRange = QPair<size_t, size_t>(0, 0);
-	}
+	std::vector<QPair<size_t, QColor> > colorRanges;
+	colorRanges.push_back(QPair<size_t, QColor>(hgltLayerRange.first, objectColor));
+	colorRanges.push_back(QPair<size_t, QColor>(hgltPathRange.first, layerColor));
+	colorRanges.push_back(QPair<size_t, QColor>(hgltCmdRange.first, pathColor));
+	colorRanges.push_back(QPair<size_t, QColor>(hgltCmdRange.second, commandColor));
+	colorRanges.push_back(QPair<size_t, QColor>(hgltPathRange.second, pathColor));
+	colorRanges.push_back(QPair<size_t, QColor>(hgltLayerRange.second, layerColor));
+	colorRanges.push_back(QPair<size_t, QColor>(m_indices.size(), objectColor));
 
-	m_GCGLView->changeHgltRanges(hgltLayerRange, hgltThreadRange);
+	m_GCGLView->changeColorRanges(colorRanges);
 }
 
 void GC3DView::reset()
@@ -417,6 +420,10 @@ void GC3DView::reset()
 
 	loadGCData();
 	m_GCGLView->bufferGCData(m_vertices, m_indices);
+
+	std::vector<QPair<size_t, QColor> > colorRanges;
+	colorRanges.push_back(QPair<size_t, QColor>(m_indices.size(), objectColor));
+	m_GCGLView->changeColorRanges(colorRanges);
 }
 
 void GC3DView::hideUpperLayers(int hide)

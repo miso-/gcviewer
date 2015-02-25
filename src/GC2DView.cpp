@@ -3,6 +3,10 @@
 #include "GCModel.h"
 #include "GCThreadItem.h"
 #include "GCGraphicsView.h"
+#include "GCTree/GCFile.h"
+#include "GCTree/GCLayer.h"
+#include "GCTree/GCPath.h"
+#include "GCTree/GCCommand.h"
 
 #include <QGraphicsLineItem>
 #include <QVBoxLayout>
@@ -10,6 +14,10 @@
 #include <QSpacerItem>
 #include <QGroupBox>
 #include <QRadioButton>
+
+const QColor layerColor(0, 127, 0);
+const QColor pathColor(127, 127, 0);
+const QColor commandColor(0, 0, 127);
 
 GC2DView::GC2DView(QWidget *parent)
 	: GCAbstractView(parent),
@@ -77,10 +85,18 @@ void GC2DView::on_gridRBtn_toggled()
 
 void GC2DView::currentChanged(const QModelIndex &current, const QModelIndex &previous)
 {
-	QAbstractItemView::currentChanged(current, previous);
+	if (!model()) {
+		return;
+	}
+
+	//WARNING: Must reconnect before exiting this method.
+	disconnect(m_gcGraphicsView->scene(), SIGNAL(selectionChanged()), this, SLOT(selection()));
 
 	QModelIndex currLayer = GCModel::getLayerIndex(current);
 	QModelIndex prevLayer = GCModel::getLayerIndex(previous);
+
+	QModelIndex prevCmdIndex = GCModel::getCommandIndex(previous);
+	QModelIndex prevPathIndex = GCModel::type(previous) == GCTreeItem::GC_PATH ? previous : prevCmdIndex.parent();
 
 	if (currLayer != prevLayer) {
 		// Change layer.
@@ -91,16 +107,35 @@ void GC2DView::currentChanged(const QModelIndex &current, const QModelIndex &pre
 			addItem(model()->index(item, 0, currLayer));
 		}
 
-	} else if (m_indexToItem.contains(previous)) {
+	} else {
 		// Deselect previously selected item.
-		m_indexToItem[previous]->setSelected(false);
+		if (prevPathIndex.isValid()) {
+			highlightItem(prevPathIndex, layerColor);
+		}
+
+		if (prevCmdIndex.isValid() && m_indexToItem.contains(prevCmdIndex)) {
+			m_indexToItem[prevCmdIndex]->setSelected(false);
+			highlightItem(prevCmdIndex, layerColor);
+		}
+
 	}
 
 	// Select newly selected item.
-	if (m_indexToItem.contains(current)) {
-		m_indexToItem[current]->setSelected(true);
+	QModelIndex currCmdIndex = GCModel::getCommandIndex(current);
+	QModelIndex currPathIndex = GCModel::type(current) == GCTreeItem::GC_PATH ? current : currCmdIndex.parent();
+
+	if (currPathIndex.isValid()) {
+		highlightItem(currPathIndex, pathColor);
 	}
 
+	if (currCmdIndex.isValid()) {
+		if (m_indexToItem.contains(current)) {
+			m_indexToItem[current]->setSelected(true);
+			highlightItem(currCmdIndex, commandColor);
+		}
+	}
+
+	connect(m_gcGraphicsView->scene(), SIGNAL(selectionChanged()), this, SLOT(selection()));
 }
 
 void GC2DView::reset()
@@ -131,36 +166,34 @@ void GC2DView::selection()
 
 }
 
-bool GC2DView::addItem(const QModelIndex &index)
+void GC2DView::addItem(const QModelIndex &index)
 {
-	if (!model()) {
-		return false;
-	}
+	const GCCommand *gcCommand = dynamic_cast<const GCCommand *>(static_cast<GCTreeItem *>(index.internalPointer()));
 
-	QVariant data = model()->data(index, Qt::UserRole);
+	if (gcCommand) {
+		if (m_indexToItem.contains(index)) {
+			// Already added.
+			return;
+		}
 
-	if (!data.isValid()) {
-		return false;
-	}
-
-	if (m_indexToItem.contains(index)) {
-		// Already added.
-		return false;
-	}
-
-	if (!data.value<parsedGCData>().thread.isNull()) {
-		QGraphicsLineItem *line = new GCThreadItem(data.value<parsedGCData>()); // QGraphicsLineItem(data.value<parsedGCData>().thread);
+		GCThreadItem *line = new GCThreadItem(*gcCommand);
 
 		if (!line) {
-			return false;
+			return;
 		}
+
+		line->setColor(layerColor);
 
 		m_indexToItem.insert(index, line);
 		m_itemToIndex.insert(line, index);
 		m_gcGraphicsView->scene()->addItem(line);
-	}
+	} else {
+		int numItems = model()->rowCount(index);
 
-	return true;
+		for (int item = 0; item < numItems; ++item) {
+			addItem(model()->index(item, 0, index));
+		}
+	}
 }
 
 bool GC2DView::removeItem(const QModelIndex &index)
@@ -176,6 +209,19 @@ bool GC2DView::removeItem(const QModelIndex &index)
 	m_gcGraphicsView->scene()->removeItem(gfxToRemove);
 
 	return true;
+}
+
+void GC2DView::highlightItem(const QModelIndex &index, const QColor &color)
+{
+	if (GCModel::type(index) == GCTreeItem::GC_COMMAND && m_indexToItem.contains(index)) {
+		static_cast<GCThreadItem *>(m_indexToItem[index])->setColor(color);
+	} else {
+		int numItems = model()->rowCount(index);
+
+		for (int item = 0; item < numItems; ++item) {
+			highlightItem(model()->index(item, 0, index), color);
+		}
+	}
 }
 
 void GC2DView::clear()

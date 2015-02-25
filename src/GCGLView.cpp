@@ -20,7 +20,7 @@ GCGLView::GCGLView(QWidget *parent)
 	  m_shaderProgram(0),
 	  m_printBedVBO(0), m_threadVerticesVBO(0), m_threadIndicesVBO(0),
 	  m_indicesSize(0),
-	  m_thinLinessRange(), m_thickLinesRange(), m_hgltLayerRange(0, 0), m_hgltThreadRange(0, 0)
+	  m_thinLinessRange(), m_thickLinesRange(), m_colorRanges()
 {
 	m_shaderProgram = new QGLShaderProgram(context(), this);
 }
@@ -82,9 +82,6 @@ void GCGLView::hideUpperLayers(int hide)
 
 void GCGLView::bufferGCData(const std::vector<Vertex> &vertices, const std::vector<GLuint> &indices)
 {
-	m_hgltLayerRange = QPair<size_t, size_t>(0, 0);
-	m_hgltThreadRange = QPair<size_t, size_t>(0, 0);
-
 	glBindBuffer(GL_ARRAY_BUFFER, m_threadVerticesVBO);
 	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), &vertices[0], GL_STATIC_DRAW);
 
@@ -92,12 +89,13 @@ void GCGLView::bufferGCData(const std::vector<Vertex> &vertices, const std::vect
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), &indices[0], GL_STATIC_DRAW);
 
 	m_indicesSize = indices.size();
+	
+	m_colorRanges.clear();
 }
 
-void GCGLView::changeHgltRanges(const QPair<size_t, size_t> &hgltLayerRange, const QPair<size_t, size_t> &hgltThreadRange)
+void GCGLView::changeColorRanges(const std::vector<QPair<size_t, QColor> > &colorRanges)
 {
-	m_hgltLayerRange = hgltLayerRange;
-	m_hgltThreadRange = hgltThreadRange;
+	m_colorRanges = colorRanges;
 
 	updateGL();
 }
@@ -308,31 +306,25 @@ void GCGLView::paintThreads()
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_threadIndicesVBO);
 
-	// Draw layers below highlighted layer.
-	m_shaderProgram->setUniformValue("global_color", 0.5, 0.0, 0.0, 1.0);
-	glDrawElements(GL_TRIANGLES, m_hgltLayerRange.first,
-				   GL_UNSIGNED_INT, 0);
+	GLsizei start = 0;
+	for (size_t i = 0; i < m_colorRanges.size(); ++i) {
+		if (i == m_colorRanges.size() - 1 && m_hideUpperLayers) {
+			break;
+		}
 
-	// Draw highlighted layer threads before highlighted thread.
-	m_shaderProgram->setUniformValue("global_color", 0.0, 0.5, 0.0, 1.0);
-	glDrawElements(GL_TRIANGLES, m_hgltThreadRange.first - m_hgltLayerRange.first,
-				   GL_UNSIGNED_INT, reinterpret_cast<GLvoid *>(m_hgltLayerRange.first * sizeof(GLuint)));
+		GLsizei end = static_cast<GLsizei>(m_colorRanges[i].first);
 
-	// Draw highlighted thread.
-	m_shaderProgram->setUniformValue("global_color", 0.0, 0.0, 0.5, 1.0);
-	glDrawElements(GL_TRIANGLES, m_hgltThreadRange.second - m_hgltThreadRange.first, GL_UNSIGNED_INT,
-				   reinterpret_cast<GLvoid *>(m_hgltThreadRange.first * sizeof(GLuint)));
+		if (end <= start) {
+			continue;
+		}
 
-	// Draw highlighted layer threads after highlighted thread.
-	m_shaderProgram->setUniformValue("global_color", 0.0, 0.5, 0.0, 1.0);
-	glDrawElements(GL_TRIANGLES, m_hgltLayerRange.second - m_hgltThreadRange.second,
-				   GL_UNSIGNED_INT, reinterpret_cast<GLvoid *>(m_hgltThreadRange.second * sizeof(GLuint)));
+		GLsizei count = end - start;
+		QColor &color = m_colorRanges[i].second;
 
-	// Draw rest of layers.
-	if (!m_hideUpperLayers) {
-		m_shaderProgram->setUniformValue("global_color", 0.5, 0.0, 0.0, 1.0);
-		glDrawElements(GL_TRIANGLES, m_indicesSize - m_hgltLayerRange.second,
-					   GL_UNSIGNED_INT, reinterpret_cast<GLvoid *>(m_hgltLayerRange.second * sizeof(GLuint)));
+		m_shaderProgram->setUniformValue("global_color", color);
+		glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, reinterpret_cast<GLvoid *>(start * sizeof(GLuint)));
+
+		start = end;
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);

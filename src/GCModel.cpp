@@ -1,82 +1,29 @@
 #include "GCModel.h"
 
+#include "GCTree/GCFile.h"
+#include "GCTree/GCLayer.h"
+#include "GCTree/GCPath.h"
+#include "GCTree/GCCommand.h"
+
 #include <QString>
 #include <QTextStream>
 
 #include <cmath>
 
-#include <QDebug>
-
 GCModel::GCModel(QObject *parent)
 	: QAbstractItemModel(parent),
 	  m_filamentXsectionArea(0.0),
-	  m_layerStarts(),
-	  m_data()
+	  gcFile(0)
 {
 
 }
 
 QVariant GCModel::data(const QModelIndex &index, int role) const
 {
-	if (index.column() != 0) {
-		return QVariant();
-	}
+	GCTreeItem *item = getItem(index);
 
-	switch (role) {
-	case Qt::DisplayRole:
-		if (!index.parent().isValid()) {
-			// Layer.
-			return QString("Layer: %1").arg(index.row());
-		} else {
-			// Command.
-			QPair<int, int> layerRange = getLayerIndexRange(index.parent().row());
-
-			if (layerRange.first + index.row() < layerRange.second) {
-				return m_data[layerRange.first + index.row()].commandText;
-			}
-
-			return QVariant();
-		}
-
-		break;
-
-	case Qt::ToolTipRole:
-		if (!index.parent().isValid()) {
-			// Layer.
-			return QString("Layer: %1").arg(index.row());
-		} else {
-			// Command.
-			QPair<int, int> layerRange = getLayerIndexRange(index.parent().row());
-
-			if (layerRange.first + index.row() < layerRange.second) {
-				return QString("Segment length: %1\nSegment width: %2")
-					   .arg(QString::number(m_data[layerRange.first + index.row()].thread.length(), 'f', 2))
-					   .arg(QString::number(m_data[layerRange.first + index.row()].threadWidth, 'f', 2));
-			}
-
-			return QVariant();
-		}
-
-		break;
-
-	case Qt::UserRole:
-		// Used by graphics views to get raw (parsedGCData) data.
-		parsedGCData result;
-
-		if (!index.parent().isValid()) {
-			// Layer.
-			result.commandText = QString("Layer: %1").arg(index.row());
-		} else {
-			// Command.
-			QPair<int, int> layerRange = getLayerIndexRange(index.parent().row());
-
-			if (layerRange.first + index.row() < layerRange.second) {
-				result = m_data[layerRange.first + index.row()];
-			}
-		}
-
-		return QVariant::fromValue<parsedGCData>(result);
-		break;
+	if (item) {
+		return item->data(role, index.column());
 	}
 
 	return QVariant();
@@ -92,16 +39,13 @@ Qt::ItemFlags GCModel::flags(const QModelIndex &index) const
 
 int GCModel::rowCount(const QModelIndex &parent) const
 {
-	if (!parent.isValid()) {
-		// Layers.
-		return m_layerStarts.size();;
-	} else if (parent.internalId() == quint32(-1)) {
-		// Command.
-		QPair<int, int> layerRange = getLayerIndexRange(parent.row());
-		return layerRange.second - layerRange.first;
+	GCTreeItem *item = getItem(parent);
+
+	if (!item) {
+		return 0;
 	}
 
-	return 0;
+	return item->childCount();
 }
 
 int GCModel::columnCount(const QModelIndex &parent) const
@@ -117,13 +61,17 @@ QModelIndex GCModel::index(int row, int column, const QModelIndex &parent) const
 		return QModelIndex();
 	}
 
-	if (!parent.isValid()) {
-		// Layer item.
-		return createIndex(row, column, quint32(-1));
-	} else {
-		// Command item.
-		return createIndex(row, column, quint32(parent.row()));
+	GCTreeItem *parentItem = getItem(parent);
+	if (!parentItem) {
+		return QModelIndex();
 	}
+
+	GCTreeItem *childItem = parentItem->child(row);
+	if (childItem) {
+		return createIndex(row, column, childItem);
+	}
+
+	return QModelIndex();
 }
 
 QModelIndex GCModel::parent(const QModelIndex &index) const
@@ -132,13 +80,17 @@ QModelIndex GCModel::parent(const QModelIndex &index) const
 		return QModelIndex();
 	}
 
-	if (index.internalId() == quint32(-1)) {
-		// Layer.
+	GCTreeItem *item = getItem(index);
+	if (!item) {
 		return QModelIndex();
-	} else {
-		// Command, parent layer index is stored in its internalId().
-		return createIndex(int(index.internalId()), 0, quint32(-1));
 	}
+
+	GCTreeItem *parentItem = item->parent();
+	if (parentItem) {
+		return createIndex(parentItem->childNumber(), 0, parentItem);
+	}
+
+	return QModelIndex();
 
 }
 
@@ -146,8 +98,11 @@ bool GCModel::loadGCode(QTextStream &gcode, double filamentDiameter, double pack
 {
 	beginResetModel();
 
-	m_data.clear();
-	m_layerStarts.clear();
+	if (gcFile) {
+		delete gcFile;
+		gcFile = 0;
+	}
+	gcFile = new GCFile();
 
 	m_filamentXsectionArea =  std::fabs((M_PI * filamentDiameter * filamentDiameter / 4) * packingDensity);
 
@@ -159,31 +114,48 @@ bool GCModel::loadGCode(QTextStream &gcode, double filamentDiameter, double pack
 	return true;
 }
 
-QModelIndex GCModel::getLayerIndex(const QModelIndex &index)
+QModelIndex GCModel::getLayerIndex(QModelIndex index)
 {
-	if (!index.isValid()) {
-		return QModelIndex();
+	while (index.isValid()) {
+		if (type(index) == GCTreeItem::GC_LAYER) {
+			return index;
+		}
+		index = index.parent();
 	}
 
-	if (index.parent().isValid()) {
-		return index.parent();
-	}
-
-	return index;
+	return QModelIndex();
 }
 
 QModelIndex GCModel::getCommandIndex(const QModelIndex &index)
 {
+	if (type(index) == GCTreeItem::GC_COMMAND) {
+		return index;
+	} else {
+		return QModelIndex();
+	}
+}
+
+GCTreeItem::TYPE GCModel::type(const QModelIndex &index)
+{
 	if (!index.isValid()) {
-		return QModelIndex();
+		return GCTreeItem::INVAL;
 	}
 
-	if (!index.parent().isValid()) {
-		// If parent is invalid, then "index" is layer index.
-		return QModelIndex();
+	GCTreeItem *item = static_cast<GCTreeItem *>(index.internalPointer());
+	if (item) {
+		return item->type();
 	}
 
-	return index;
+	return GCTreeItem::INVAL;
+}
+
+GCTreeItem *GCModel::getItem(const QModelIndex &index) const
+{
+	if (!index.isValid()) {
+		return gcFile;
+	}
+
+	return static_cast<GCTreeItem *>(index.internalPointer());
 }
 
 bool getGCParam(const QString &line, const QString &param, double &value)
@@ -239,7 +211,9 @@ void GCModel::parseGCode(QTextStream &gcodeStream)
 	double e;
 	double param;
 
-	m_layerStarts.push_back(0);
+	GCLayer *layer = new GCLayer(currZ);
+	GCPath *path = new GCPath(true);
+	bool pathTravel = true;
 
 	while (!gcodeStream.atEnd()) {
 		line = gcodeStream.readLine();
@@ -247,6 +221,10 @@ void GCModel::parseGCode(QTextStream &gcodeStream)
 		parsedGCData data;
 		data.z = currZ;
 		data.commandText = line;
+
+		GCCommand *gcCommand = new GCCommand();
+		gcCommand->z = currZ;
+		gcCommand->commandText = line;
 
 		line = line.simplified().toUpper();
 
@@ -275,18 +253,35 @@ void GCModel::parseGCode(QTextStream &gcodeStream)
 					// Inter layers travel move.
 					zRise = newZ - currZ;
 					currZ = newZ;
-					m_layerStarts.push_back(m_data.size() + 1);
+
+					layer->addChild(path);
+					path = new GCPath(true);
+					pathTravel = true;
+
+					gcFile->addChild(layer);
+					layer = new GCLayer(newZ);
 
 				} else {
 					createThread(currPos, newPos, e, zRise, data);
+					gcCommand->thread = data.thread;
+					gcCommand->threadHeight = data.threadHeight;
+					gcCommand->threadWidth = data.threadWidth;
 				}
 
 				currPos = newPos;
 			}
 
-			m_data.push_back(data);
+			if ((pathTravel && data.threadWidth > 0.001) || (!pathTravel && data.threadWidth < 0.001)) {
+				layer->addChild(path);
+				pathTravel = !pathTravel;
+				path = new GCPath(pathTravel);
+
+			}
+			path->addChild(gcCommand);
 		}
 	}
+	layer->addChild(path);
+	gcFile->addChild(layer);
 
 }
 
@@ -312,26 +307,4 @@ void GCModel::createThread(const QPointF &begin, const QPointF &end, double e, d
 	}
 
 	return;
-}
-
-QPair<int, int> GCModel::getLayerIndexRange(int layerIndex) const
-{
-	if (layerIndex < 0 || layerIndex >= m_layerStarts.size()) {
-		return QPair<int, int>(0, 0);
-	}
-
-	int start = m_layerStarts[layerIndex];
-	int end;
-
-	if (layerIndex + 1 >= m_layerStarts.size()) {
-		end = m_data.size();
-	} else {
-		end = m_layerStarts[layerIndex + 1];
-	}
-
-	if (start > end) {
-		return QPair<int, int>(0, 0);
-	}
-
-	return QPair<int, int>(start, end);
 }

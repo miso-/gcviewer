@@ -26,8 +26,9 @@ public slots:
 	void selection();
 
 private:
-	bool addItem(const QModelIndex &index);
+	void addItem(const QModelIndex &index);
 	bool removeItem(const QModelIndex &index);
+	void highlightItem(const QModelIndex &index, const QColor &color);
 	void clear();
 
 	GCGraphicsView *m_gcGraphicsView;

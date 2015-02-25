@@ -10,6 +10,7 @@
 #include <QRectF>
 #include <QPair>
 #include <QMatrix4x4>
+#include <QColor>
 
 #include <vector>
 
@@ -34,7 +35,7 @@ public:
 	void resetView();
 	void hideUpperLayers(int hide);
 	void bufferGCData(const std::vector<Vertex> &vertices, const std::vector<GLuint> &indices);
-	void changeHgltRanges(const QPair<size_t, size_t> &m_hgltLayerRange, const QPair<size_t, size_t> &m_hgltThreadRange);
+	void changeColorRanges(const std::vector<QPair<size_t, QColor> > &colorRanges);
 
 protected:
 	virtual void initializeGL();
@@ -79,8 +80,7 @@ private:
 	size_t m_indicesSize;
 	QPair<size_t, size_t> m_thinLinessRange;
 	QPair<size_t, size_t> m_thickLinesRange;
-	QPair<size_t, size_t> m_hgltLayerRange;
-	QPair<size_t, size_t> m_hgltThreadRange;
+	std::vector<QPair<size_t, QColor> > m_colorRanges;
 };
 
 #endif // GCGLVIEW_H

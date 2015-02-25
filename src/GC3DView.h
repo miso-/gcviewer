@@ -33,9 +33,10 @@ private:
 	void addThreadHullIndices();
 	void addThreadFaceIndices(bool start);
 	std::vector<GCGLView::Vertex> getThreadVertices(QLineF thread, double width, double height, double z);
-	void terminatePath(const QVariant &path);
-	void addThread(const QVariant &thread, const QVariant &previous);
+	void terminatePath(const GCCommand *path);
+	void addThread(const GCCommand *thread, const GCCommand *prevThread);
 	bool addItem(const QModelIndex &index, QModelIndex &previous);
+	QPair<size_t, size_t> getHgltRange(const QModelIndex &index) const;
 	void loadGCData();
 
 	GCGLView *m_GCGLView;

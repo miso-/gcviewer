@@ -3,12 +3,11 @@
 #include <QPen>
 #include <QStyleOptionGraphicsItem>
 
-GCThreadItem::GCThreadItem(parsedGCData data, QGraphicsItem *parent, QGraphicsScene *scene)
+GCThreadItem::GCThreadItem(const GCCommand &data, QGraphicsItem *parent, QGraphicsScene *scene)
 	: QGraphicsLineItem(data.thread, parent, scene)
 {
 	setFlag(QGraphicsItem::ItemIsSelectable, true);
 	QPen p = pen();
-	p.setColor(Qt::black);
 	p.setWidthF(data.threadWidth);
 	p.setCapStyle(Qt::RoundCap);
 	setPen(p);
@@ -26,11 +25,17 @@ void GCThreadItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *opti
 QVariant GCThreadItem::itemChange(QGraphicsItem::GraphicsItemChange change, const QVariant &value)
 {
 	if (change == QGraphicsItem::ItemSelectedChange) {
-		QPen p = pen();
-		p.setColor(value.toBool() ? Qt::blue : Qt::black);
-		setPen(p);
 		setZValue(value.toBool() ? 1 : 0);
 	}
 
 	return QGraphicsItem::itemChange(change, value);
+}
+
+void GCThreadItem::setColor(const QColor &color)
+{
+	QPen p = pen();
+	p.setColor(color);
+	setPen(p);
+
+	update();
 }

@@ -1,11 +1,15 @@
 #ifndef GCLISTVIEW_H
 #define GCLISTVIEW_H
 
+#include "GCTree/GCLayer.h"
+#include "GCTree/GCCommand.h"
+
 #include <QAbstractItemModel>
 #include <QVector>
 #include <QLineF>
 
 class QTextStream;
+class GCFile;
 
 struct parsedGCData {
 	parsedGCData() : z(0.0), commandText(), threadWidth(0.0),
@@ -23,6 +27,7 @@ Q_DECLARE_METATYPE(parsedGCData)
 class GCModel : public QAbstractItemModel
 {
 	Q_OBJECT
+	Q_DISABLE_COPY(GCModel)
 
 public:
 	GCModel(QObject *parent = 0);
@@ -37,21 +42,21 @@ public:
 	bool loadGCode(QTextStream &gcode, double filamentDiameter, double packingDensity);
 
 	// GCModelIndex
-	static QModelIndex getLayerIndex(const QModelIndex &index);
+	static QModelIndex getLayerIndex(QModelIndex index);
 	static QModelIndex getCommandIndex(const QModelIndex &index);
+	static GCTreeItem::TYPE type(const QModelIndex &index);
 
 signals:
 	void layersNumChanged(int);
 
 private:
+	GCTreeItem *getItem(const QModelIndex &index) const;
 	void parseGCode(QTextStream &gcodeStream);
 	void createThread(const QPointF &begin, const QPointF &end, double e, double zRise, parsedGCData &data) const;
-	QPair<int, int> getLayerIndexRange(int layerIndex) const;
 
 	double m_filamentXsectionArea;
 
-	QVector<int> m_layerStarts;
-	QVector<parsedGCData> m_data;
+	GCFile *gcFile;
 };
 
 #endif // GCLISTVIEW_H
